@@ -1,0 +1,328 @@
+import { dbGetAll, dbGet, dbPut, dbDelete, dbGetByIndex } from './db'
+import { getSupabase } from './supabase'
+
+// ── Unique ID generator ────────────────────────────────────────────────────
+export function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+}
+
+// ── URL encode / decode form config (for shareable links) ──────────────────
+export function encodeFormConfig(config) {
+  try { return btoa(encodeURIComponent(JSON.stringify(config))) }
+  catch { return null }
+}
+export function decodeFormConfig(encoded) {
+  try { return JSON.parse(decodeURIComponent(atob(encoded))) }
+  catch { return null }
+}
+
+// ── Country codes for WhatsApp ─────────────────────────────────────────────
+export const COUNTRY_CODES = [
+  { code: '+233', flag: '🇬🇭', name: 'Ghana' },
+  { code: '+234', flag: '🇳🇬', name: 'Nigeria' },
+  { code: '+1',   flag: '🇺🇸', name: 'USA / Canada' },
+  { code: '+44',  flag: '🇬🇧', name: 'United Kingdom' },
+  { code: '+353', flag: '🇮🇪', name: 'Ireland' },
+  { code: '+27',  flag: '🇿🇦', name: 'South Africa' },
+  { code: '+254', flag: '🇰🇪', name: 'Kenya' },
+  { code: '+255', flag: '🇹🇿', name: 'Tanzania' },
+  { code: '+256', flag: '🇺🇬', name: 'Uganda' },
+  { code: '+263', flag: '🇿🇼', name: 'Zimbabwe' },
+  { code: '+49',  flag: '🇩🇪', name: 'Germany' },
+  { code: '+31',  flag: '🇳🇱', name: 'Netherlands' },
+  { code: '+61',  flag: '🇦🇺', name: 'Australia' },
+  { code: '+33',  flag: '🇫🇷', name: 'France' },
+  { code: '+971', flag: '🇦🇪', name: 'UAE' },
+  { code: '+91',  flag: '🇮🇳', name: 'India' },
+  { code: '+55',  flag: '🇧🇷', name: 'Brazil' },
+  { code: '+64',  flag: '🇳🇿', name: 'New Zealand' },
+]
+
+// ── Default field templates ────────────────────────────────────────────────
+export const DEFAULT_REGISTRATION_FIELDS = [
+  { id: 'f_name',       type: 'full_name', label: 'Full Name',               placeholder: 'Enter your full name',   required: true },
+  { id: 'f_email',      type: 'email',     label: 'Email Address',           placeholder: 'your@email.com',         required: true },
+  { id: 'f_whatsapp',   type: 'whatsapp',  label: 'WhatsApp Number',         placeholder: 'Enter phone number',     required: true,  defaultCountryCode: '+233' },
+  { id: 'f_gender',     type: 'radio',     label: 'Gender',                  required: true,  options: ['Female', 'Male', 'Prefer not to say'] },
+  { id: 'f_occupation', type: 'text',      label: 'Occupation / Profession', placeholder: 'What do you do?',        required: true },
+  { id: 'f_how',        type: 'radio',     label: 'How did you hear about us?', required: false, options: ['Instagram', 'Facebook', 'Friend / Referral', 'Newsletter', 'Other'] },
+]
+
+export const DEFAULT_FEEDBACK_FIELDS = [
+  { id: 'f_name',       type: 'full_name', label: 'Full Name',                     placeholder: 'Your name (optional)',   required: false },
+  { id: 'f_email',      type: 'email',     label: 'Email Address',                 placeholder: 'your@email.com',         required: false },
+  { id: 'f_rating',     type: 'rating',    label: 'Overall Rating',                required: true },
+  { id: 'f_enjoyed',    type: 'textarea',  label: 'What did you enjoy most?',      placeholder: 'Share your highlights...', required: true },
+  { id: 'f_recommend',  type: 'radio',     label: 'Would you recommend this event?', required: true, options: ['Yes, definitely!', 'Probably yes', 'Not sure', 'Probably not'] },
+  { id: 'f_improve',    type: 'textarea',  label: 'What can we improve?',          placeholder: 'Your honest feedback helps us grow...', required: false },
+  { id: 'f_testimonial',type: 'textarea',  label: 'Testimonial (will be shared)',  placeholder: 'Write a short testimonial we can feature...', required: false },
+]
+
+// ── Forms CRUD ─────────────────────────────────────────────────────────────
+export async function getAllForms() {
+  const sb = getSupabase()
+  if (sb) {
+    const { data, error } = await sb.from('forms').select('data').order('created_at', { ascending: false })
+    if (error) throw error
+    return (data || []).map(r => r.data)
+  }
+  return dbGetAll('forms')
+}
+
+export async function getFormById(id) {
+  const sb = getSupabase()
+  if (sb) {
+    const { data, error } = await sb.from('forms').select('data').eq('id', id).single()
+    if (error) return null
+    return data?.data || null
+  }
+  return dbGet('forms', id)
+}
+
+export async function saveForm(form) {
+  const now = new Date().toISOString()
+  const record = { ...form, updatedAt: now }
+  if (!record.id) record.id = uid()
+  if (!record.createdAt) record.createdAt = now
+  const sb = getSupabase()
+  if (sb) {
+    const { error } = await sb.from('forms').upsert(
+      { id: record.id, data: record, created_at: record.createdAt },
+      { onConflict: 'id' }
+    )
+    if (error) throw error
+    return record
+  }
+  await dbPut('forms', record)
+  return record
+}
+
+export async function deleteForm(id) {
+  const sb = getSupabase()
+  if (sb) {
+    // Submissions and tasks are deleted via cascade in Supabase
+    // but our schema doesn't have FK cascade, so delete explicitly
+    await sb.from('submissions').delete().eq('form_id', id)
+    await sb.from('tasks').delete().eq('form_id', id)
+    const { error } = await sb.from('forms').delete().eq('id', id)
+    if (error) throw error
+    return
+  }
+  await dbDelete('forms', id)
+  const subs = await dbGetByIndex('submissions', 'formId', id)
+  for (const sub of subs) await dbDelete('submissions', sub.id)
+  await dbDelete('tasks', id)
+}
+
+// ── Submissions CRUD ───────────────────────────────────────────────────────
+export async function getFormSubmissions(formId) {
+  const sb = getSupabase()
+  if (sb) {
+    const { data, error } = await sb.from('submissions').select('data').eq('form_id', formId).order('submitted_at', { ascending: false })
+    if (error) throw error
+    return (data || []).map(r => r.data)
+  }
+  return dbGetByIndex('submissions', 'formId', formId)
+}
+
+export async function addSubmission(formId, data) {
+  const sub = { id: uid(), formId, timestamp: new Date().toISOString(), data }
+  const sb = getSupabase()
+  if (sb) {
+    const { error } = await sb.from('submissions').insert({
+      id: sub.id, form_id: formId, data: sub, submitted_at: sub.timestamp,
+    })
+    if (error) throw error
+    return sub
+  }
+  await dbPut('submissions', sub)
+  return sub
+}
+
+export async function deleteSubmission(_formId, subId) {
+  const sb = getSupabase()
+  if (sb) {
+    const { error } = await sb.from('submissions').delete().eq('id', subId)
+    if (error) throw error
+    return
+  }
+  await dbDelete('submissions', subId)
+}
+
+export async function exportCSV(formId) {
+  const form = await getFormById(formId)
+  const subs = await getFormSubmissions(formId)
+  if (!form || !subs.length) return
+
+  const headers = ['#', 'Timestamp', ...form.fields.map(f => f.label)]
+  const rows = subs.map((s, i) => [
+    i + 1,
+    new Date(s.timestamp).toLocaleString(),
+    ...form.fields.map(f => {
+      const v = s.data[f.id]
+      if (f.type === 'whatsapp') return `${v?.code || ''} ${v?.number || ''}`
+      if (f.type === 'picture') return v?.name ? `[Photo: ${v.name}]` : ''
+      if (Array.isArray(v)) return v.join('; ')
+      return v || ''
+    }),
+  ])
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.download = `${(form.title || 'form').replace(/\s+/g, '_')}_${Date.now()}.csv`
+  a.href = url; a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// ── Speakers CRUD ──────────────────────────────────────────────────────────
+export async function getAllSpeakers() {
+  const sb = getSupabase()
+  if (sb) {
+    const { data, error } = await sb.from('speakers').select('data').order('created_at', { ascending: false })
+    if (error) throw error
+    return (data || []).map(r => r.data)
+  }
+  return dbGetAll('speakers')
+}
+
+export async function getSpeakerById(id) {
+  const sb = getSupabase()
+  if (sb) {
+    const { data, error } = await sb.from('speakers').select('data').eq('id', id).single()
+    if (error) return null
+    return data?.data || null
+  }
+  return dbGet('speakers', id)
+}
+
+export async function saveSpeaker(speaker) {
+  const now = new Date().toISOString()
+  const record = { ...speaker, updatedAt: now }
+  if (!record.id) record.id = uid()
+  if (!record.createdAt) record.createdAt = now
+  const sb = getSupabase()
+  if (sb) {
+    const { error } = await sb.from('speakers').upsert(
+      { id: record.id, data: record, created_at: record.createdAt },
+      { onConflict: 'id' }
+    )
+    if (error) throw error
+    return record
+  }
+  await dbPut('speakers', record)
+  return record
+}
+
+export async function deleteSpeaker(id) {
+  const sb = getSupabase()
+  if (sb) {
+    const { error } = await sb.from('speakers').delete().eq('id', id)
+    if (error) throw error
+    return
+  }
+  await dbDelete('speakers', id)
+}
+
+// ── Event Tasks / Checklist ────────────────────────────────────────────────
+const DEFAULT_TASKS = {
+  pre: [
+    'Confirm meeting link / book venue',
+    'Finalise speaker lineup and topics',
+    'Design and publish event flyer',
+    'Open registration form and share link',
+    'Send invitations to mailing list',
+    'Prepare interview / discussion questions',
+    'Send 48-hour reminder email',
+    'Send 1-hour reminder email',
+    'Test audio/video setup',
+  ],
+  during: [
+    'Welcome attendees warmly',
+    'Introduce each speaker',
+    'Manage Q&A and live chat',
+    'Record the session',
+    'Post live updates on social media',
+    'Note attendance count',
+  ],
+  post: [
+    'Send thank-you email to all attendees',
+    'Share recording link',
+    'Publish feedback form',
+    'Update speaker database with new info',
+    'Archive registration data (CSV export)',
+    'Post event recap / highlights',
+    'Plan next event',
+  ],
+}
+
+export async function getEventTasks(formId) {
+  const sb = getSupabase()
+  if (sb) {
+    const { data } = await sb.from('tasks').select('data').eq('form_id', formId).maybeSingle()
+    if (data?.data) return data.data
+  } else {
+    const doc = await dbGet('tasks', formId)
+    if (doc) return { pre: doc.pre || [], during: doc.during || [], post: doc.post || [] }
+  }
+  // First time: create defaults
+  const tasks = {
+    pre:    DEFAULT_TASKS.pre.map((t, i) => ({ id: `p${i}`, text: t, done: false })),
+    during: DEFAULT_TASKS.during.map((t, i) => ({ id: `d${i}`, text: t, done: false })),
+    post:   DEFAULT_TASKS.post.map((t, i) => ({ id: `q${i}`, text: t, done: false })),
+  }
+  await saveEventTasks(formId, tasks)
+  return tasks
+}
+
+export async function saveEventTasks(formId, tasks) {
+  const sb = getSupabase()
+  if (sb) {
+    const { error } = await sb.from('tasks').upsert({ form_id: formId, data: tasks }, { onConflict: 'form_id' })
+    if (error) throw error
+    return
+  }
+  await dbPut('tasks', { formId, ...tasks })
+}
+
+// ── Email sending via EmailJS ──────────────────────────────────────────────
+export async function sendEmailJS(serviceId, templateId, vars, publicKey) {
+  if (!serviceId || !templateId || !publicKey) return false
+  try {
+    const emailjs = await import('@emailjs/browser')
+    await emailjs.default.send(serviceId, templateId, vars, { publicKey })
+    return true
+  } catch (e) {
+    console.warn('[EmailJS] send failed:', e)
+    return false
+  }
+}
+
+// ── Countdown helper ───────────────────────────────────────────────────────
+export function getTimeLeft(targetDateStr) {
+  if (!targetDateStr) return null
+  const diff = new Date(targetDateStr) - new Date()
+  if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, past: true }
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+    past: false,
+  }
+}
+
+// ── Format date ────────────────────────────────────────────────────────────
+export function formatDate(dateStr) {
+  if (!dateStr) return ''
+  try {
+    return new Date(dateStr).toLocaleDateString('en-GB', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    })
+  } catch { return dateStr }
+}
