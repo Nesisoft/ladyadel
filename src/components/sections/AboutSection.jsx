@@ -20,7 +20,7 @@ const HIGHLIGHTS = [
   },
   {
     icon:  '🎓',
-    title: 'EMBA · Corporate Finance',
+    title: 'EMBA · Finance',
     detail: 'Strategic finance training applied to real-world growth.',
   },
   {
@@ -90,7 +90,7 @@ export default function AboutSection() {
             </p>
             <p>
               I am co-senior pastor at <strong>The HPC Global</strong> and hold an
-              <strong> EMBA in Corporate Finance</strong>. That means I get to sit at a
+              <strong> EMBA in Finance</strong>. That means I get to sit at a
               rare intersection — the boardroom and the pulpit, the spreadsheet and the
               scripture. I have never believed these worlds compete; I believe they were
               always meant to work together.
