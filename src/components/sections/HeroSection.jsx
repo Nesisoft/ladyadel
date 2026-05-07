@@ -71,7 +71,7 @@ export default function HeroSection() {
           <div className="hero__credentials" role="list">
             <div role="listitem">
               <strong>EMBA</strong>
-              <span>Finance</span>
+              <span>Corporate Finance</span>
             </div>
             <div role="listitem">
               <strong>Co-Senior Pastor</strong>
