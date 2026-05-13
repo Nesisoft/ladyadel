@@ -9,7 +9,7 @@ import CTAButton from '../ui/CTAButton'
  *   Mobile  — stacked: portrait on top, copy below.
  *   Desktop — two columns: copy left, portrait right.
  *
- * PLACEHOLDER: Replace /images/lady-adel-hero.jpg with the real
+ * PLACEHOLDER: Replace /images/lady-adel-hero.jpeg with the real
  * professional portrait (high-quality, confident, warm, professional
  * attire). If the file is missing, the stylised placeholder frame
  * with her initials renders instead via the onError handler.
@@ -90,7 +90,7 @@ export default function HeroSection() {
             {imgOk ? (
               // PLACEHOLDER: Replace with Lady Adel's professional portrait
               <img
-                src="/images/lady-adel-hero.jpg"
+                src="/images/lady-adel-hero.jpeg"
                 alt="Lady Adel — Apostle Adelaide Clottey"
                 onError={() => setImgOk(false)}
               />
@@ -99,7 +99,7 @@ export default function HeroSection() {
                 <div className="hero__initials">LA</div>
                 <div className="hero__frame-note">
                   <strong>Portrait placeholder</strong>
-                  Replace <code>/images/lady-adel-hero.jpg</code>
+                  Replace <code>/images/lady-adel-hero.jpeg</code>
                 </div>
               </div>
             )}
